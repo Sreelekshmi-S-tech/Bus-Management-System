@@ -2,14 +2,17 @@ package model;
 
 public class Booking {
 
-    // Core entity fields
     private int bookingId;
+    private int groupId;
     private int passengerId;
     private int busId;
     private int seatNumber;
     private String bookingDate;
+    private double baseFare;
+    private int concessionPercent;
     private double fare;
-    private String status;
+    private String seatPassengerGender;
+    private String status; // "BOOKED" or "CANCELLED"
 
     // Supplementary detail fields for views and ticket generation
     private String passengerName;
@@ -17,120 +20,74 @@ public class Booking {
     private String busName;
     private String source;
     private String destination;
+    private String busDepartureTime;
 
-    public Booking() {
-    }
+    public Booking() {}
 
-    public Booking(int bookingId, int passengerId, int busId, int seatNumber, String bookingDate, double fare, String status) {
+    public Booking(int bookingId, int groupId, int passengerId, int busId, int seatNumber,
+                   String bookingDate, double baseFare, int concessionPercent, double fare,
+                   String seatPassengerGender, String status) {
         this.bookingId = bookingId;
+        this.groupId = groupId;
         this.passengerId = passengerId;
         this.busId = busId;
         this.seatNumber = seatNumber;
         this.bookingDate = bookingDate;
+        this.baseFare = baseFare;
+        this.concessionPercent = concessionPercent;
         this.fare = fare;
+        this.seatPassengerGender = seatPassengerGender;
         this.status = status;
     }
 
-    // Getters
-    public int getBookingId() {
-        return bookingId;
-    }
+    public int getBookingId() { return bookingId; }
+    public void setBookingId(int bookingId) { this.bookingId = bookingId; }
 
-    public int getPassengerId() {
-        return passengerId;
-    }
+    public int getGroupId() { return groupId; }
+    public void setGroupId(int groupId) { this.groupId = groupId; }
 
-    public int getBusId() {
-        return busId;
-    }
+    public int getPassengerId() { return passengerId; }
+    public void setPassengerId(int passengerId) { this.passengerId = passengerId; }
 
-    public int getSeatNumber() {
-        return seatNumber;
-    }
+    public int getBusId() { return busId; }
+    public void setBusId(int busId) { this.busId = busId; }
 
-    public String getBookingDate() {
-        return bookingDate;
-    }
+    public int getSeatNumber() { return seatNumber; }
+    public void setSeatNumber(int seatNumber) { this.seatNumber = seatNumber; }
 
-    public double getFare() {
-        return fare;
-    }
+    public String getBookingDate() { return bookingDate; }
+    public void setBookingDate(String bookingDate) { this.bookingDate = bookingDate; }
 
-    public String getStatus() {
-        return status;
-    }
+    public double getBaseFare() { return baseFare; }
+    public void setBaseFare(double baseFare) { this.baseFare = baseFare; }
 
-    public String getPassengerName() {
-        return passengerName;
-    }
+    public int getConcessionPercent() { return concessionPercent; }
+    public void setConcessionPercent(int concessionPercent) { this.concessionPercent = concessionPercent; }
 
-    public String getPassengerPhone() {
-        return passengerPhone;
-    }
+    public double getFare() { return fare; }
+    public void setFare(double fare) { this.fare = fare; }
 
-    public String getBusName() {
-        return busName;
-    }
+    public String getSeatPassengerGender() { return seatPassengerGender; }
+    public void setSeatPassengerGender(String seatPassengerGender) { this.seatPassengerGender = seatPassengerGender; }
 
-    public String getSource() {
-        return source;
-    }
+    public String getStatus() { return status; }
+    public void setStatus(String status) { this.status = status; }
 
-    public String getDestination() {
-        return destination;
-    }
+    public String getPassengerName() { return passengerName; }
+    public void setPassengerName(String passengerName) { this.passengerName = passengerName; }
 
-    // Setters
-    public void setBookingId(int bookingId) {
-        this.bookingId = bookingId;
-    }
+    public String getPassengerPhone() { return passengerPhone; }
+    public void setPassengerPhone(String passengerPhone) { this.passengerPhone = passengerPhone; }
 
-    public void setPassengerId(int passengerId) {
-        this.passengerId = passengerId;
-    }
+    public String getBusName() { return busName; }
+    public void setBusName(String busName) { this.busName = busName; }
 
-    public void setBusId(int busId) {
-        this.busId = busId;
-    }
+    public String getSource() { return source; }
+    public void setSource(String source) { this.source = source; }
 
-    public void setSeatNumber(int seatNumber) {
-        this.seatNumber = seatNumber;
-    }
+    public String getDestination() { return destination; }
+    public void setDestination(String destination) { this.destination = destination; }
 
-    public void setBookingDate(String bookingDate) {
-        this.bookingDate = bookingDate;
-    }
-
-    public void setFare(double fare) {
-        this.fare = fare;
-    }
-
-    public void setStatus(String status) {
-        this.status = status;
-    }
-
-    public void setPassengerName(String passengerName) {
-        this.passengerName = passengerName;
-    }
-
-    public void setPassengerPhone(String passengerPhone) {
-        this.passengerPhone = passengerPhone;
-    }
-
-    public void setBusName(String busName) {
-        this.busName = busName;
-    }
-
-    public void setSource(String source) {
-        this.source = source;
-    }
-
-    public void setDestination(String destination) {
-        this.destination = destination;
-    }
-
-    @Override
-    public String toString() {
-        return "Booking #" + bookingId + " [Passenger: " + passengerName + ", Bus: " + busName + ", Seat: " + seatNumber + "]";
-    }
+    public String getBusDepartureTime() { return busDepartureTime; }
+    public void setBusDepartureTime(String busDepartureTime) { this.busDepartureTime = busDepartureTime; }
 }

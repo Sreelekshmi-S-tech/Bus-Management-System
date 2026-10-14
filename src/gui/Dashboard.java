@@ -1,139 +1,413 @@
 package gui;
 
-import dao.BookingDAO;
-import dao.BusDAO;
-import dao.PassengerDAO;
+import database.DBConnection;
+import model.User;
+import service.AuthService;
+import util.AppIcon;
+import util.ThemeManager;
 
 import javax.swing.*;
 import java.awt.*;
+import java.sql.Connection;
+import java.sql.PreparedStatement;
+import java.sql.ResultSet;
+import java.util.ArrayList;
+import java.util.List;
 
-public class Dashboard extends JFrame {
+public class Dashboard extends JFrame implements ThemeManager.ThemeChangeListener {
 
-    private JLabel statsLabel;
+    private JLabel totalBusesLabel;
+    private JLabel totalPassengersLabel;
+    private JLabel activeBookingsLabel;
+    private JLabel todayDeparturesLabel;
+    private JLabel userBadgeLabel;
+
+    private JPanel mainPanel;
+    private JPanel headerPanel;
+    private JLabel titleLabel;
+    private JLabel subTitleLabel;
+    private ModernButton themeToggleBtn;
+    private ModernButton logoutBtn;
+
+    private final List<JPanel> statCards = new ArrayList<>();
+    private final List<JLabel> statTitleLabels = new ArrayList<>();
+    private final List<AppIcon> statIcons = new ArrayList<>();
+    private final List<JLabel> statIconLabels = new ArrayList<>();
+
+    private final List<JPanel> navCards = new ArrayList<>();
+    private final List<JLabel> navTitleLabels = new ArrayList<>();
+    private final List<JLabel> navDescLabels = new ArrayList<>();
+    private final List<AppIcon> navIcons = new ArrayList<>();
+    private final List<JLabel> navIconLabels = new ArrayList<>();
+    private final List<ModernButton> navButtons = new ArrayList<>();
 
     public Dashboard() {
-        setTitle("Bus Reservation System - Admin Dashboard");
-        setSize(850, 560);
+        setTitle("Bus Management & Reservation System - Main Dashboard");
+        setSize(1020, 720);
+        setMinimumSize(new Dimension(960, 680));
         setLocationRelativeTo(null);
         setDefaultCloseOperation(JFrame.EXIT_ON_CLOSE);
 
-        JPanel mainPanel = new JPanel(new BorderLayout(15, 15));
-        mainPanel.setBorder(BorderFactory.createEmptyBorder(20, 25, 20, 25));
+        initUI();
+        refreshStats();
 
-        // Header Panel
-        JPanel headerPanel = new JPanel(new BorderLayout());
-        headerPanel.setBackground(new Color(44, 62, 80));
-        headerPanel.setBorder(BorderFactory.createEmptyBorder(15, 20, 15, 20));
+        // Register for real-time theme updates
+        ThemeManager.getInstance().addListener(this);
+        applyTheme(ThemeManager.getInstance().isDarkMode());
+    }
 
-        JLabel title = new JLabel("Bus Reservation System");
-        title.setForeground(Color.WHITE);
-        title.setFont(new Font("Arial", Font.BOLD, 24));
+    private void initUI() {
+        ThemeManager tm = ThemeManager.getInstance();
+        mainPanel = new JPanel(new BorderLayout());
+        mainPanel.setBackground(tm.getBgColor());
 
-        JLabel subtitle = new JLabel("Admin Control Panel");
-        subtitle.setForeground(new Color(189, 195, 199));
-        subtitle.setFont(new Font("Arial", Font.PLAIN, 14));
+        // ==========================================
+        // 1. Header Strip with Vector Logo & Branding
+        // ==========================================
+        headerPanel = new JPanel(new BorderLayout());
+        headerPanel.setBackground(tm.getHeaderBg());
+        headerPanel.setPreferredSize(new Dimension(1020, 88));
+        headerPanel.setBorder(BorderFactory.createEmptyBorder(15, 25, 15, 25));
 
-        JPanel titleBox = new JPanel(new GridLayout(2, 1));
-        titleBox.setOpaque(false);
-        titleBox.add(title);
-        titleBox.add(subtitle);
+        JPanel headerLeft = new JPanel(new FlowLayout(FlowLayout.LEFT, 16, 0));
+        headerLeft.setOpaque(false);
 
-        JButton logoutButton = new JButton("Logout");
-        logoutButton.setBackground(new Color(231, 76, 60));
-        logoutButton.setForeground(Color.BLACK);
-        logoutButton.setFocusPainted(false);
-        logoutButton.addActionListener(e -> {
-            int confirm = JOptionPane.showConfirmDialog(this, "Are you sure you want to log out?", "Logout", JOptionPane.YES_NO_OPTION);
-            if (confirm == JOptionPane.YES_OPTION) {
-                new LoginFrame().setVisible(true);
-                dispose();
-            }
+        // Vector Bus Logo (Pure Java2D drawing, never missing glyph)
+        JLabel busLogo = new JLabel(AppIcon.of(AppIcon.Type.BUS, 42, Color.WHITE));
+        headerLeft.add(busLogo);
+
+        JPanel titleBlock = new JPanel(new GridLayout(2, 1, 0, 2));
+        titleBlock.setOpaque(false);
+        titleLabel = new JLabel("Bus Reservation & Fleet System");
+        titleLabel.setFont(new Font("Segoe UI", Font.BOLD, 21));
+        titleLabel.setForeground(Color.WHITE);
+
+        subTitleLabel = new JLabel("Central Control Center & Real-Time Booking Terminal");
+        subTitleLabel.setFont(new Font("Segoe UI", Font.PLAIN, 12));
+        subTitleLabel.setForeground(tm.getHeaderSubtext());
+        titleBlock.add(titleLabel);
+        titleBlock.add(subTitleLabel);
+        headerLeft.add(titleBlock);
+
+        JPanel headerRight = new JPanel(new FlowLayout(FlowLayout.RIGHT, 12, 6));
+        headerRight.setOpaque(false);
+
+        User currentUser = AuthService.getInstance().getCurrentUser();
+        String username = (currentUser != null) ? currentUser.getUsername() : "Guest";
+        String role = (currentUser != null) ? currentUser.getRole() : "USER";
+
+        // Vector Avatar User Badge (Fixes missing glyph '▯')
+        userBadgeLabel = new JLabel(username + " [" + role + "]", AppIcon.of(AppIcon.Type.USER, 16, Color.WHITE), SwingConstants.LEFT);
+        userBadgeLabel.setIconTextGap(8);
+        userBadgeLabel.setFont(new Font("Segoe UI", Font.BOLD, 13));
+        userBadgeLabel.setForeground(Color.WHITE);
+        userBadgeLabel.setBorder(BorderFactory.createCompoundBorder(
+                BorderFactory.createLineBorder(new Color(56, 189, 248), 1, true),
+                BorderFactory.createEmptyBorder(6, 12, 6, 12)
+        ));
+        headerRight.add(userBadgeLabel);
+
+        // Dark / Light Mode Toggle Button
+        boolean isDark = tm.isDarkMode();
+        themeToggleBtn = new ModernButton(
+                isDark ? "Light Mode" : "Dark Mode",
+                AppIcon.of(isDark ? AppIcon.Type.SUN : AppIcon.Type.MOON, 15, Color.WHITE),
+                new Color(40, 56, 85),
+                Color.WHITE
+        );
+        themeToggleBtn.setPreferredSize(new Dimension(130, 36));
+        themeToggleBtn.setCornerRadius(6);
+        themeToggleBtn.addActionListener(e -> tm.toggleTheme());
+        headerRight.add(themeToggleBtn);
+
+        // Logout Button
+        logoutBtn = new ModernButton(
+                "Logout",
+                AppIcon.of(AppIcon.Type.LOGOUT, 14, Color.WHITE),
+                tm.getDangerRed(),
+                Color.WHITE
+        );
+        logoutBtn.setPreferredSize(new Dimension(105, 36));
+        logoutBtn.setCornerRadius(6);
+        logoutBtn.addActionListener(e -> {
+            AuthService.getInstance().logout();
+            new LoginFrame().setVisible(true);
+            dispose();
         });
+        headerRight.add(logoutBtn);
 
-        headerPanel.add(titleBox, BorderLayout.WEST);
-        headerPanel.add(logoutButton, BorderLayout.EAST);
+        headerPanel.add(headerLeft, BorderLayout.WEST);
+        headerPanel.add(headerRight, BorderLayout.EAST);
         mainPanel.add(headerPanel, BorderLayout.NORTH);
 
-        // Center Grid of Action Buttons
-        JPanel gridPanel = new JPanel(new GridLayout(2, 2, 25, 25));
-        gridPanel.setBorder(BorderFactory.createEmptyBorder(25, 30, 25, 30));
+        // ==========================================
+        // 2. Content Center Panel
+        // ==========================================
+        JPanel contentPanel = new JPanel(new BorderLayout(0, 16));
+        contentPanel.setOpaque(false);
+        contentPanel.setBorder(BorderFactory.createEmptyBorder(18, 30, 20, 30));
 
-        // 1. Bus Management Button
-        JButton busButton = createDashboardCard("Bus Management", "Manage bus routes, capacity, and fares", new Color(52, 152, 219));
-        busButton.addActionListener(e -> new BusManagement().setVisible(true));
+        // KPI Stat Cards Panel
+        JPanel statsPanel = new JPanel(new GridLayout(1, 4, 18, 0));
+        statsPanel.setOpaque(false);
+        statsPanel.setPreferredSize(new Dimension(960, 95));
 
-        // 2. Passenger Management Button
-        JButton passengerButton = createDashboardCard("Passenger Management", "Register and update passenger records", new Color(41, 128, 185));
-        passengerButton.addActionListener(e -> new PassengerManagement().setVisible(true));
+        totalBusesLabel = new JLabel("...", SwingConstants.LEFT);
+        totalPassengersLabel = new JLabel("...", SwingConstants.LEFT);
+        activeBookingsLabel = new JLabel("...", SwingConstants.LEFT);
+        todayDeparturesLabel = new JLabel("...", SwingConstants.LEFT);
 
-        // 3. Seat Booking Button
-        JButton bookingButton = createDashboardCard("Seat Booking", "Reserve bus seats and view real-time availability", new Color(39, 174, 96));
-        bookingButton.addActionListener(e -> new BookingManagement().setVisible(true));
+        statsPanel.add(createStatCard("Total Buses", totalBusesLabel, tm.getPrimaryBlue(), AppIcon.Type.BUS));
+        statsPanel.add(createStatCard("Registered Passengers", totalPassengersLabel, tm.getSuccessGreen(), AppIcon.Type.USERS));
+        statsPanel.add(createStatCard("Active Bookings", activeBookingsLabel, tm.getPurpleAccent(), AppIcon.Type.TICKET));
+        statsPanel.add(createStatCard("Today's Departures", todayDeparturesLabel, tm.getOrangeAccent(), AppIcon.Type.CLOCK));
 
-        // 4. Ticket Generation Button
-        JButton ticketButton = createDashboardCard("Ticket Generation", "Issue boarding passes and export tickets", new Color(142, 68, 173));
-        ticketButton.addActionListener(e -> new TicketGeneration().setVisible(true));
+        contentPanel.add(statsPanel, BorderLayout.NORTH);
 
-        gridPanel.add(busButton);
-        gridPanel.add(passengerButton);
-        gridPanel.add(bookingButton);
-        gridPanel.add(ticketButton);
+        // Navigation Action Cards Panel
+        JPanel navGrid = new JPanel(new GridLayout(2, 2, 22, 22));
+        navGrid.setOpaque(false);
 
-        mainPanel.add(gridPanel, BorderLayout.CENTER);
+        boolean isAdmin = AuthService.getInstance().isAdmin();
 
-        // Footer / Stats Bar
-        JPanel footerPanel = new JPanel(new BorderLayout());
-        footerPanel.setBorder(BorderFactory.createEmptyBorder(5, 10, 5, 10));
+        // 1. Passenger Management Card
+        navGrid.add(createNavCard(
+                "Passenger Management",
+                "Register, update, and search passenger profiles with disability status",
+                AppIcon.Type.USER,
+                tm.getPrimaryBlue(),
+                isAdmin,
+                () -> new PassengerManagement().setVisible(true)
+        ));
 
-        statsLabel = new JLabel("Loading system statistics...");
-        statsLabel.setFont(new Font("Arial", Font.PLAIN, 13));
-        statsLabel.setForeground(new Color(127, 140, 141));
+        // 2. Bus Fleet Management Card
+        navGrid.add(createNavCard(
+                "Bus Fleet Management",
+                "Manage bus schedules, routes, seating types, and live departure statuses",
+                AppIcon.Type.BUS_FRONT,
+                tm.getSuccessGreen(),
+                isAdmin,
+                () -> new BusManagement().setVisible(true)
+        ));
 
-        JButton refreshStatsBtn = new JButton("Refresh Stats");
-        refreshStatsBtn.addActionListener(e -> updateQuickStats());
+        // 3. Seat Booking & Reservation Card
+        navGrid.add(createNavCard(
+                "Seat Booking & Reservation",
+                "Interactive seat map with neighbour-aware gender views & multi-seat booking",
+                AppIcon.Type.SEAT,
+                tm.getPurpleAccent(),
+                true, // Available for all
+                () -> new BookingManagement().setVisible(true)
+        ));
 
-        footerPanel.add(statsLabel, BorderLayout.WEST);
-        footerPanel.add(refreshStatsBtn, BorderLayout.EAST);
+        // 4. Boarding Pass & Ticket Generation Card
+        navGrid.add(createNavCard(
+                "Boarding Pass & Tickets",
+                "Generate, view, and print official boarding pass tickets with concessions",
+                AppIcon.Type.TICKET,
+                tm.getOrangeAccent(),
+                true, // Available for all
+                () -> new TicketGeneration().setVisible(true)
+        ));
 
-        mainPanel.add(footerPanel, BorderLayout.SOUTH);
+        contentPanel.add(navGrid, BorderLayout.CENTER);
+        mainPanel.add(contentPanel, BorderLayout.CENTER);
 
         add(mainPanel);
-
-        updateQuickStats();
     }
 
-    private JButton createDashboardCard(String title, String desc, Color accentColor) {
-        JButton button = new JButton();
-        button.setLayout(new BorderLayout(5, 5));
-        button.setBorder(BorderFactory.createCompoundBorder(
-                BorderFactory.createLineBorder(accentColor, 2),
-                BorderFactory.createEmptyBorder(15, 15, 15, 15)
+    private JPanel createStatCard(String title, JLabel valueLabel, Color accentColor, AppIcon.Type iconType) {
+        ThemeManager tm = ThemeManager.getInstance();
+        JPanel card = new JPanel(new BorderLayout(10, 6));
+        card.setBackground(tm.getCardBg());
+        card.setBorder(BorderFactory.createCompoundBorder(
+                BorderFactory.createLineBorder(tm.getCardBorder(), 1, true),
+                BorderFactory.createEmptyBorder(14, 18, 14, 18)
         ));
-        button.setBackground(Color.WHITE);
-        button.setFocusPainted(false);
-        button.setCursor(new Cursor(Cursor.HAND_CURSOR));
+        statCards.add(card);
+
+        JPanel top = new JPanel(new BorderLayout());
+        top.setOpaque(false);
 
         JLabel titleLbl = new JLabel(title);
-        titleLbl.setFont(new Font("Arial", Font.BOLD, 18));
-        titleLbl.setForeground(accentColor);
+        titleLbl.setFont(new Font("Segoe UI", Font.BOLD, 12));
+        titleLbl.setForeground(tm.getTextSecondary());
+        statTitleLabels.add(titleLbl);
 
-        JLabel descLbl = new JLabel("<html><body style='width: 180px; color: #555555;'>" + desc + "</body></html>");
-        descLbl.setFont(new Font("Arial", Font.PLAIN, 12));
+        AppIcon icon = AppIcon.of(iconType, 22, accentColor);
+        JLabel iconLbl = new JLabel(icon);
+        statIcons.add(icon);
+        statIconLabels.add(iconLbl);
 
-        button.add(titleLbl, BorderLayout.NORTH);
-        button.add(descLbl, BorderLayout.CENTER);
+        top.add(titleLbl, BorderLayout.WEST);
+        top.add(iconLbl, BorderLayout.EAST);
 
-        return button;
+        valueLabel.setFont(new Font("Segoe UI", Font.BOLD, 28));
+        valueLabel.setForeground(accentColor);
+        valueLabel.setHorizontalAlignment(SwingConstants.LEFT);
+
+        card.add(top, BorderLayout.NORTH);
+        card.add(valueLabel, BorderLayout.CENTER);
+        return card;
     }
 
-    private void updateQuickStats() {
-        try {
-            int busCount = new BusDAO().getAllBuses().size();
-            int passCount = new PassengerDAO().getAllPassengers().size();
-            int bookCount = new BookingDAO().getAllBookings().size();
-            statsLabel.setText(String.format("System Status:  %d Buses  |  %d Passengers  |  %d Bookings registered", busCount, passCount, bookCount));
-        } catch (Exception ex) {
-            statsLabel.setText("System Status: Database connected");
+    private JPanel createNavCard(String title, String description, AppIcon.Type iconType, Color accent, boolean enabled, Runnable action) {
+        ThemeManager tm = ThemeManager.getInstance();
+        JPanel card = new JPanel(new BorderLayout(15, 10));
+        card.setBackground(tm.getCardBg());
+        card.setBorder(BorderFactory.createCompoundBorder(
+                BorderFactory.createLineBorder(tm.getCardBorder(), 1, true),
+                BorderFactory.createEmptyBorder(16, 20, 16, 20)
+        ));
+        navCards.add(card);
+
+        JPanel header = new JPanel(new FlowLayout(FlowLayout.LEFT, 15, 0));
+        header.setOpaque(false);
+
+        AppIcon icon = AppIcon.of(iconType, 36, accent);
+        JLabel iconLbl = new JLabel(icon);
+        navIcons.add(icon);
+        navIconLabels.add(iconLbl);
+        header.add(iconLbl);
+
+        JPanel textBlock = new JPanel(new GridLayout(2, 1, 0, 4));
+        textBlock.setOpaque(false);
+
+        JLabel titleLbl = new JLabel(title);
+        titleLbl.setFont(new Font("Segoe UI", Font.BOLD, 17));
+        titleLbl.setForeground(tm.getTextPrimary());
+        navTitleLabels.add(titleLbl);
+
+        JLabel descLbl = new JLabel("<html><body style='width: 320px;'>" + description + "</body></html>");
+        descLbl.setFont(new Font("Segoe UI", Font.PLAIN, 12));
+        descLbl.setForeground(tm.getTextSecondary());
+        navDescLabels.add(descLbl);
+
+        textBlock.add(titleLbl);
+        textBlock.add(descLbl);
+        header.add(textBlock);
+
+        // Modern Button with Vector Arrow / Lock Icon
+        ModernButton openBtn = new ModernButton(
+                enabled ? "Open Module" : "Admin Only",
+                enabled ? AppIcon.of(AppIcon.Type.ARROW_RIGHT, 14, Color.WHITE) : AppIcon.of(AppIcon.Type.LOCK, 14, Color.WHITE),
+                enabled ? accent : new Color(150, 160, 175),
+                Color.WHITE
+        );
+        openBtn.setPreferredSize(new Dimension(0, 38));
+        openBtn.setCornerRadius(8);
+        openBtn.setEnabled(enabled);
+        if (enabled) {
+            openBtn.addActionListener(e -> action.run());
         }
+        navButtons.add(openBtn);
+
+        card.add(header, BorderLayout.CENTER);
+        card.add(openBtn, BorderLayout.SOUTH);
+        return card;
+    }
+
+    @Override
+    public void onThemeChanged(boolean isDark) {
+        applyTheme(isDark);
+    }
+
+    private void applyTheme(boolean isDark) {
+        ThemeManager tm = ThemeManager.getInstance();
+
+        // 1. Overall frame & header
+        mainPanel.setBackground(tm.getBgColor());
+        headerPanel.setBackground(tm.getHeaderBg());
+        subTitleLabel.setForeground(tm.getHeaderSubtext());
+
+        // 2. Toggle button state
+        themeToggleBtn.setText(isDark ? "Light Mode" : "Dark Mode");
+        themeToggleBtn.setIcon(AppIcon.of(isDark ? AppIcon.Type.SUN : AppIcon.Type.MOON, 15, Color.WHITE));
+        themeToggleBtn.setColors(isDark ? new Color(51, 65, 85) : new Color(40, 56, 85), Color.WHITE);
+
+        // 3. Stat cards
+        for (JPanel card : statCards) {
+            card.setBackground(tm.getCardBg());
+            card.setBorder(BorderFactory.createCompoundBorder(
+                    BorderFactory.createLineBorder(tm.getCardBorder(), 1, true),
+                    BorderFactory.createEmptyBorder(14, 18, 14, 18)
+            ));
+        }
+        for (JLabel titleLbl : statTitleLabels) {
+            titleLbl.setForeground(tm.getTextSecondary());
+        }
+
+        // 4. Nav cards
+        for (JPanel card : navCards) {
+            card.setBackground(tm.getCardBg());
+            card.setBorder(BorderFactory.createCompoundBorder(
+                    BorderFactory.createLineBorder(tm.getCardBorder(), 1, true),
+                    BorderFactory.createEmptyBorder(16, 20, 16, 20)
+            ));
+        }
+        for (JLabel titleLbl : navTitleLabels) {
+            titleLbl.setForeground(tm.getTextPrimary());
+        }
+        for (JLabel descLbl : navDescLabels) {
+            descLbl.setForeground(tm.getTextSecondary());
+        }
+
+        // Revalidate and repaint everything smoothly
+        mainPanel.revalidate();
+        mainPanel.repaint();
+    }
+
+    @Override
+    public void dispose() {
+        ThemeManager.getInstance().removeListener(this);
+        super.dispose();
+    }
+
+    public void refreshStats() {
+        SwingWorker<int[], Void> worker = new SwingWorker<>() {
+            @Override
+            protected int[] doInBackground() {
+                int buses = 0, passengers = 0, bookings = 0, todayDeps = 0;
+                try (Connection con = DBConnection.getConnection()) {
+                    // Total Buses
+                    try (PreparedStatement ps = con.prepareStatement("SELECT COUNT(*) FROM bus");
+                         ResultSet rs = ps.executeQuery()) {
+                        if (rs.next()) buses = rs.getInt(1);
+                    }
+                    // Total Passengers
+                    try (PreparedStatement ps = con.prepareStatement("SELECT COUNT(*) FROM passenger");
+                         ResultSet rs = ps.executeQuery()) {
+                        if (rs.next()) passengers = rs.getInt(1);
+                    }
+                    // Active Bookings
+                    try (PreparedStatement ps = con.prepareStatement("SELECT COUNT(*) FROM booking WHERE status = 'BOOKED'");
+                         ResultSet rs = ps.executeQuery()) {
+                        if (rs.next()) bookings = rs.getInt(1);
+                    }
+                    // Today's Departures
+                    try (PreparedStatement ps = con.prepareStatement("SELECT COUNT(*) FROM bus WHERE DATE(departure_time) = CURDATE()");
+                         ResultSet rs = ps.executeQuery()) {
+                        if (rs.next()) todayDeps = rs.getInt(1);
+                    }
+                } catch (Exception e) {
+                    e.printStackTrace();
+                }
+                return new int[]{buses, passengers, bookings, todayDeps};
+            }
+
+            @Override
+            protected void done() {
+                try {
+                    int[] stats = get();
+                    totalBusesLabel.setText(String.valueOf(stats[0]));
+                    totalPassengersLabel.setText(String.valueOf(stats[1]));
+                    activeBookingsLabel.setText(String.valueOf(stats[2]));
+                    todayDeparturesLabel.setText(String.valueOf(stats[3]));
+                } catch (Exception e) {
+                    e.printStackTrace();
+                }
+            }
+        };
+        worker.execute();
     }
 }

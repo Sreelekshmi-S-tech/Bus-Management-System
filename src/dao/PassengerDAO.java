@@ -3,28 +3,33 @@ package dao;
 import database.DBConnection;
 import model.Passenger;
 
-import java.sql.Connection;
-import java.sql.PreparedStatement;
-import java.sql.ResultSet;
-import java.sql.SQLException;
+import java.sql.*;
 import java.util.ArrayList;
 import java.util.List;
 
 public class PassengerDAO {
 
-    public boolean addPassenger(Passenger p) {
-        String query = "INSERT INTO passenger (passenger_id, name, age, gender, phone) VALUES (?, ?, ?, ?, ?)";
-        try (Connection con = DBConnection.getConnection();
-             PreparedStatement pst = con.prepareStatement(query)) {
-            
-            pst.setInt(1, p.getPassengerId());
-            pst.setString(2, p.getName());
-            pst.setInt(3, p.getAge());
-            pst.setString(4, p.getGender());
-            pst.setString(5, p.getPhoneNumber());
+    public boolean addPassenger(Passenger passenger) {
+        String sql = "INSERT INTO passenger (passenger_id, user_id, name, age, gender, phone, has_disability, disability_id_no) " +
+                     "VALUES (?, ?, ?, ?, ?, ?, ?, ?)";
 
-            int rows = pst.executeUpdate();
-            return rows > 0;
+        try (Connection con = DBConnection.getConnection();
+             PreparedStatement ps = con.prepareStatement(sql)) {
+
+            ps.setInt(1, passenger.getPassengerId());
+            if (passenger.getUserId() != null) {
+                ps.setInt(2, passenger.getUserId());
+            } else {
+                ps.setNull(2, Types.INTEGER);
+            }
+            ps.setString(3, passenger.getName());
+            ps.setInt(4, passenger.getAge());
+            ps.setString(5, passenger.getGender());
+            ps.setString(6, passenger.getPhoneNumber());
+            ps.setBoolean(7, passenger.isHasDisability());
+            ps.setString(8, passenger.getDisabilityIdNo());
+
+            return ps.executeUpdate() > 0;
         } catch (SQLException e) {
             e.printStackTrace();
             return false;
@@ -33,20 +38,14 @@ public class PassengerDAO {
 
     public List<Passenger> getAllPassengers() {
         List<Passenger> list = new ArrayList<>();
-        String query = "SELECT * FROM passenger ORDER BY passenger_id ASC";
+        String sql = "SELECT * FROM passenger ORDER BY passenger_id ASC";
+
         try (Connection con = DBConnection.getConnection();
-             PreparedStatement pst = con.prepareStatement(query);
-             ResultSet rs = pst.executeQuery()) {
+             PreparedStatement ps = con.prepareStatement(sql);
+             ResultSet rs = ps.executeQuery()) {
 
             while (rs.next()) {
-                Passenger p = new Passenger(
-                        rs.getInt("passenger_id"),
-                        rs.getString("name"),
-                        rs.getInt("age"),
-                        rs.getString("gender"),
-                        rs.getString("phone")
-                );
-                list.add(p);
+                list.add(extractPassenger(rs));
             }
         } catch (SQLException e) {
             e.printStackTrace();
@@ -55,20 +54,14 @@ public class PassengerDAO {
     }
 
     public Passenger getPassengerById(int id) {
-        String query = "SELECT * FROM passenger WHERE passenger_id = ?";
+        String sql = "SELECT * FROM passenger WHERE passenger_id = ?";
         try (Connection con = DBConnection.getConnection();
-             PreparedStatement pst = con.prepareStatement(query)) {
+             PreparedStatement ps = con.prepareStatement(sql)) {
 
-            pst.setInt(1, id);
-            try (ResultSet rs = pst.executeQuery()) {
+            ps.setInt(1, id);
+            try (ResultSet rs = ps.executeQuery()) {
                 if (rs.next()) {
-                    return new Passenger(
-                            rs.getInt("passenger_id"),
-                            rs.getString("name"),
-                            rs.getInt("age"),
-                            rs.getString("gender"),
-                            rs.getString("phone")
-                    );
+                    return extractPassenger(rs);
                 }
             }
         } catch (SQLException e) {
@@ -77,18 +70,39 @@ public class PassengerDAO {
         return null;
     }
 
-    public boolean updatePassenger(Passenger p) {
-        String query = "UPDATE passenger SET name = ?, age = ?, gender = ?, phone = ? WHERE passenger_id = ?";
+    public Passenger getPassengerByUserId(int userId) {
+        String sql = "SELECT * FROM passenger WHERE user_id = ?";
         try (Connection con = DBConnection.getConnection();
-             PreparedStatement pst = con.prepareStatement(query)) {
+             PreparedStatement ps = con.prepareStatement(sql)) {
 
-            pst.setString(1, p.getName());
-            pst.setInt(2, p.getAge());
-            pst.setString(3, p.getGender());
-            pst.setString(4, p.getPhoneNumber());
-            pst.setInt(5, p.getPassengerId());
+            ps.setInt(1, userId);
+            try (ResultSet rs = ps.executeQuery()) {
+                if (rs.next()) {
+                    return extractPassenger(rs);
+                }
+            }
+        } catch (SQLException e) {
+            e.printStackTrace();
+        }
+        return null;
+    }
 
-            return pst.executeUpdate() > 0;
+    public boolean updatePassenger(Passenger passenger) {
+        String sql = "UPDATE passenger SET name = ?, age = ?, gender = ?, phone = ?, has_disability = ?, disability_id_no = ? " +
+                     "WHERE passenger_id = ?";
+
+        try (Connection con = DBConnection.getConnection();
+             PreparedStatement ps = con.prepareStatement(sql)) {
+
+            ps.setString(1, passenger.getName());
+            ps.setInt(2, passenger.getAge());
+            ps.setString(3, passenger.getGender());
+            ps.setString(4, passenger.getPhoneNumber());
+            ps.setBoolean(5, passenger.isHasDisability());
+            ps.setString(6, passenger.getDisabilityIdNo());
+            ps.setInt(7, passenger.getPassengerId());
+
+            return ps.executeUpdate() > 0;
         } catch (SQLException e) {
             e.printStackTrace();
             return false;
@@ -96,15 +110,45 @@ public class PassengerDAO {
     }
 
     public boolean deletePassenger(int id) {
-        String query = "DELETE FROM passenger WHERE passenger_id = ?";
+        String sql = "DELETE FROM passenger WHERE passenger_id = ?";
         try (Connection con = DBConnection.getConnection();
-             PreparedStatement pst = con.prepareStatement(query)) {
+             PreparedStatement ps = con.prepareStatement(sql)) {
 
-            pst.setInt(1, id);
-            return pst.executeUpdate() > 0;
+            ps.setInt(1, id);
+            return ps.executeUpdate() > 0;
         } catch (SQLException e) {
             e.printStackTrace();
             return false;
         }
+    }
+
+    public int getNextPassengerId() {
+        String sql = "SELECT COALESCE(MAX(passenger_id), 100) + 1 FROM passenger";
+        try (Connection con = DBConnection.getConnection();
+             PreparedStatement ps = con.prepareStatement(sql);
+             ResultSet rs = ps.executeQuery()) {
+            if (rs.next()) {
+                return rs.getInt(1);
+            }
+        } catch (SQLException e) {
+            e.printStackTrace();
+        }
+        return 101;
+    }
+
+    private Passenger extractPassenger(ResultSet rs) throws SQLException {
+        Passenger p = new Passenger();
+        p.setPassengerId(rs.getInt("passenger_id"));
+        int uid = rs.getInt("user_id");
+        if (!rs.wasNull()) {
+            p.setUserId(uid);
+        }
+        p.setName(rs.getString("name"));
+        p.setAge(rs.getInt("age"));
+        p.setGender(rs.getString("gender"));
+        p.setPhoneNumber(rs.getString("phone"));
+        p.setHasDisability(rs.getBoolean("has_disability"));
+        p.setDisabilityIdNo(rs.getString("disability_id_no"));
+        return p;
     }
 }

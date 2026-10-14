@@ -1,254 +1,334 @@
 package gui;
 
 import dao.BookingDAO;
-import model.Booking;
+import model.BookingGroup;
+import util.AppIcon;
+import util.ThemeManager;
 
 import javax.swing.*;
-import javax.swing.table.DefaultTableModel;
 import java.awt.*;
-import java.awt.event.MouseAdapter;
-import java.awt.event.MouseEvent;
+import java.awt.print.PageFormat;
+import java.awt.print.Printable;
+import java.awt.print.PrinterException;
+import java.awt.print.PrinterJob;
 import java.io.File;
-import java.io.PrintWriter;
-import java.util.List;
+import java.io.FileWriter;
+import java.io.IOException;
 
-public class TicketGeneration extends JFrame {
+public class TicketGeneration extends JFrame implements ThemeManager.ThemeChangeListener {
+
+    private final BookingDAO bookingDAO = new BookingDAO();
 
     private JTextField searchField;
-    private JTextArea ticketArea;
-    private JTable bookingTable;
-    private DefaultTableModel tableModel;
-    private BookingDAO bookingDAO;
-    private Booking currentBooking;
+    private JTextArea ticketPreviewArea;
+    private ModernButton printButton;
+    private ModernButton exportButton;
+    private ModernButton searchBtn;
+    private ModernButton closeBtn;
+
+    private JPanel mainPanel;
+    private JPanel headerPanel;
+    private JPanel searchPanel;
+    private JLabel searchLbl;
+
+    private BookingGroup currentBookingGroup;
 
     public TicketGeneration() {
-        this(-1);
-    }
-
-    public TicketGeneration(int initialBookingId) {
-        bookingDAO = new BookingDAO();
-
-        setTitle("Bus Reservation System - Ticket Generation");
-        setSize(950, 640);
+        setTitle("Official Boarding Pass & E-Ticket Generator - Bus Reservation System");
+        setSize(780, 720);
+        setMinimumSize(new Dimension(720, 620));
         setLocationRelativeTo(null);
         setDefaultCloseOperation(JFrame.DISPOSE_ON_CLOSE);
 
-        JPanel mainPanel = new JPanel(new BorderLayout(15, 15));
-        mainPanel.setBorder(BorderFactory.createEmptyBorder(15, 20, 20, 20));
+        initUI();
 
-        // Header Panel
-        JPanel headerPanel = new JPanel();
-        headerPanel.setBackground(new Color(142, 68, 173));
-        JLabel title = new JLabel("Ticket Generation & Boarding Pass");
+        ThemeManager.getInstance().addListener(this);
+        applyTheme(ThemeManager.getInstance().isDarkMode());
+    }
+
+    private void initUI() {
+        ThemeManager tm = ThemeManager.getInstance();
+        mainPanel = new JPanel(new BorderLayout(12, 12));
+        mainPanel.setBackground(tm.getBgColor());
+        mainPanel.setBorder(BorderFactory.createEmptyBorder(15, 20, 15, 20));
+
+        // Header Strip
+        headerPanel = new JPanel(new BorderLayout());
+        headerPanel.setBackground(tm.getHeaderBg());
+        headerPanel.setPreferredSize(new Dimension(740, 60));
+        headerPanel.setBorder(BorderFactory.createEmptyBorder(12, 20, 12, 20));
+
+        JLabel title = new JLabel("Official Boarding Pass & E-Ticket Generator", AppIcon.of(AppIcon.Type.TICKET, 22, Color.WHITE), SwingConstants.LEFT);
+        title.setIconTextGap(10);
+        title.setFont(new Font("Segoe UI", Font.BOLD, 17));
         title.setForeground(Color.WHITE);
-        title.setFont(new Font("Arial", Font.BOLD, 22));
-        title.setBorder(BorderFactory.createEmptyBorder(10, 10, 10, 10));
-        headerPanel.add(title);
+        headerPanel.add(title, BorderLayout.WEST);
+
         mainPanel.add(headerPanel, BorderLayout.NORTH);
 
-        // Top Search Bar
-        JPanel searchBar = new JPanel(new FlowLayout(FlowLayout.LEFT, 10, 5));
-        searchBar.setBorder(BorderFactory.createTitledBorder("Search Booking"));
-        searchBar.add(new JLabel("Booking ID:"));
-        searchField = new JTextField(12);
-        searchBar.add(searchField);
-        JButton searchButton = new JButton("View Ticket");
-        searchButton.setBackground(new Color(52, 152, 219));
-        searchButton.setForeground(Color.BLACK);
-        searchBar.add(searchButton);
-        JButton refreshButton = new JButton("Refresh Bookings");
-        searchBar.add(refreshButton);
-
-        // Center Split (List of Bookings on Left, Formatted Ticket on Right)
-        JPanel contentPanel = new JPanel(new GridLayout(1, 2, 20, 0));
-
-        // Left Table
-        JPanel listPanel = new JPanel(new BorderLayout(5, 5));
-        listPanel.setBorder(BorderFactory.createTitledBorder("Select from Bookings"));
-        String[] columns = {"ID", "Passenger", "Bus", "Seat", "Status"};
-        tableModel = new DefaultTableModel(columns, 0) {
-            @Override
-            public boolean isCellEditable(int row, int column) {
-                return false;
-            }
-        };
-        bookingTable = new JTable(tableModel);
-        bookingTable.setSelectionMode(ListSelectionModel.SINGLE_SELECTION);
-        bookingTable.setRowHeight(24);
-        listPanel.add(new JScrollPane(bookingTable), BorderLayout.CENTER);
-        contentPanel.add(listPanel);
-
-        // Right Ticket View
-        JPanel ticketPanel = new JPanel(new BorderLayout(10, 10));
-        ticketPanel.setBorder(BorderFactory.createTitledBorder("Ticket Preview"));
-
-        ticketArea = new JTextArea();
-        ticketArea.setFont(new Font("Monospaced", Font.PLAIN, 13));
-        ticketArea.setEditable(false);
-        ticketArea.setBackground(new Color(250, 250, 250));
-        ticketArea.setBorder(BorderFactory.createCompoundBorder(
-                BorderFactory.createLineBorder(Color.LIGHT_GRAY),
-                BorderFactory.createEmptyBorder(10, 10, 10, 10)
+        // Search Bar Panel
+        searchPanel = new JPanel(new FlowLayout(FlowLayout.LEFT, 12, 10));
+        searchPanel.setBackground(tm.getCardBg());
+        searchPanel.setBorder(BorderFactory.createCompoundBorder(
+                BorderFactory.createLineBorder(tm.getCardBorder(), 1, true),
+                BorderFactory.createEmptyBorder(4, 10, 4, 10)
         ));
-        ticketPanel.add(new JScrollPane(ticketArea), BorderLayout.CENTER);
 
-        // Bottom Actions for Ticket
-        JPanel actionPanel = new JPanel(new FlowLayout(FlowLayout.RIGHT, 10, 5));
-        JButton printButton = new JButton("Print Ticket");
-        printButton.setBackground(new Color(46, 204, 113));
-        printButton.setForeground(Color.BLACK);
+        searchLbl = new JLabel("Enter Booking Group ID:");
+        searchLbl.setFont(new Font("Segoe UI", Font.BOLD, 13));
+        searchLbl.setForeground(tm.getTextPrimary());
 
-        JButton saveButton = new JButton("Save as File");
-        saveButton.setBackground(new Color(241, 196, 15));
-        saveButton.setForeground(Color.BLACK);
+        searchField = new JTextField(12);
+        searchField.setFont(new Font("Segoe UI", Font.PLAIN, 13));
+        searchField.setBackground(tm.getInputBg());
+        searchField.setForeground(tm.getInputText());
+        searchField.setCaretColor(tm.getInputText());
+        searchField.setBorder(BorderFactory.createCompoundBorder(
+                BorderFactory.createLineBorder(tm.getInputBorder(), 1, true),
+                BorderFactory.createEmptyBorder(4, 8, 4, 8)
+        ));
 
-        JButton closeButton = new JButton("Close");
+        searchBtn = new ModernButton("Search & Load Ticket", AppIcon.of(AppIcon.Type.SEARCH, 13, Color.WHITE), tm.getPrimaryBlue(), Color.WHITE);
+        searchBtn.setCornerRadius(6);
+        searchBtn.addActionListener(e -> searchBooking());
+        searchField.addActionListener(e -> searchBooking());
 
-        actionPanel.add(printButton);
-        actionPanel.add(saveButton);
-        actionPanel.add(closeButton);
-        ticketPanel.add(actionPanel, BorderLayout.SOUTH);
+        searchPanel.add(searchLbl);
+        searchPanel.add(searchField);
+        searchPanel.add(searchBtn);
 
-        contentPanel.add(ticketPanel);
+        // Center: Ticket Receipt Preview
+        ticketPreviewArea = new JTextArea();
+        ticketPreviewArea.setFont(new Font("Monospaced", Font.PLAIN, 13));
+        ticketPreviewArea.setEditable(false);
+        ticketPreviewArea.setBackground(tm.isDarkMode() ? new Color(20, 28, 44) : new Color(254, 254, 252));
+        ticketPreviewArea.setForeground(tm.isDarkMode() ? new Color(226, 232, 240) : new Color(30, 30, 30));
+        ticketPreviewArea.setMargin(new Insets(20, 25, 20, 25));
 
-        JPanel centerContainer = new JPanel(new BorderLayout(10, 10));
-        centerContainer.add(searchBar, BorderLayout.NORTH);
-        centerContainer.add(contentPanel, BorderLayout.CENTER);
+        ticketPreviewArea.setText("\n\n\n\n                  ================================================\n" +
+                                 "                  Please enter a Booking Group ID above and click\n" +
+                                 "                  'Search & Load Ticket' to generate boarding pass.\n" +
+                                 "                  ================================================");
 
-        mainPanel.add(centerContainer, BorderLayout.CENTER);
-        add(mainPanel);
+        JScrollPane scrollPane = new JScrollPane(ticketPreviewArea);
+        scrollPane.setBorder(BorderFactory.createLineBorder(tm.getCardBorder()));
 
-        // Event Listeners
-        searchButton.addActionListener(e -> searchTicket());
-        refreshButton.addActionListener(e -> loadBookings());
+        JPanel centerPanel = new JPanel(new BorderLayout(0, 10));
+        centerPanel.setOpaque(false);
+        centerPanel.add(searchPanel, BorderLayout.NORTH);
+        centerPanel.add(scrollPane, BorderLayout.CENTER);
+        mainPanel.add(centerPanel, BorderLayout.CENTER);
+
+        // Bottom Actions Panel
+        JPanel bottomPanel = new JPanel(new FlowLayout(FlowLayout.RIGHT, 15, 10));
+        bottomPanel.setOpaque(false);
+
+        printButton = new ModernButton("Print Boarding Pass", AppIcon.of(AppIcon.Type.PRINT, 14, Color.WHITE), tm.getSuccessGreen(), Color.WHITE);
+        printButton.setCornerRadius(6);
+        printButton.setEnabled(false);
         printButton.addActionListener(e -> printTicket());
-        saveButton.addActionListener(e -> saveTicketToFile());
-        closeButton.addActionListener(e -> dispose());
 
-        bookingTable.addMouseListener(new MouseAdapter() {
+        exportButton = new ModernButton("Save Receipt as TXT", AppIcon.of(AppIcon.Type.CHECK, 14, Color.WHITE), new Color(71, 85, 105), Color.WHITE);
+        exportButton.setCornerRadius(6);
+        exportButton.setEnabled(false);
+        exportButton.addActionListener(e -> exportToTxt());
+
+        closeBtn = new ModernButton("Close", null, new Color(120, 130, 145), Color.WHITE);
+        closeBtn.setCornerRadius(6);
+        closeBtn.addActionListener(e -> dispose());
+
+        bottomPanel.add(exportButton);
+        bottomPanel.add(printButton);
+        bottomPanel.add(closeBtn);
+        mainPanel.add(bottomPanel, BorderLayout.SOUTH);
+
+        add(mainPanel);
+    }
+
+    @Override
+    public void onThemeChanged(boolean isDark) {
+        applyTheme(isDark);
+    }
+
+    private void applyTheme(boolean isDark) {
+        ThemeManager tm = ThemeManager.getInstance();
+        mainPanel.setBackground(tm.getBgColor());
+        headerPanel.setBackground(tm.getHeaderBg());
+
+        searchPanel.setBackground(tm.getCardBg());
+        searchPanel.setBorder(BorderFactory.createCompoundBorder(
+                BorderFactory.createLineBorder(tm.getCardBorder(), 1, true),
+                BorderFactory.createEmptyBorder(4, 10, 4, 10)
+        ));
+        searchLbl.setForeground(tm.getTextPrimary());
+
+        searchField.setBackground(tm.getInputBg());
+        searchField.setForeground(tm.getInputText());
+        searchField.setCaretColor(tm.getInputText());
+
+        ticketPreviewArea.setBackground(isDark ? new Color(20, 28, 44) : new Color(254, 254, 252));
+        ticketPreviewArea.setForeground(isDark ? new Color(226, 232, 240) : new Color(30, 30, 30));
+
+        mainPanel.revalidate();
+        mainPanel.repaint();
+    }
+
+    @Override
+    public void dispose() {
+        ThemeManager.getInstance().removeListener(this);
+        super.dispose();
+    }
+
+    public void loadBookingById(int groupId) {
+        searchField.setText(String.valueOf(groupId));
+        searchBooking();
+    }
+
+    private void searchBooking() {
+        String input = searchField.getText().trim();
+        if (input.isEmpty()) {
+            JOptionPane.showMessageDialog(this, "Please enter a valid Booking Group ID.", "Input Required", JOptionPane.WARNING_MESSAGE);
+            return;
+        }
+
+        int groupId;
+        try {
+            groupId = Integer.parseInt(input);
+        } catch (NumberFormatException e) {
+            JOptionPane.showMessageDialog(this, "Booking Group ID must be a numeric number.", "Invalid Input", JOptionPane.WARNING_MESSAGE);
+            return;
+        }
+
+        SwingWorker<BookingGroup, Void> worker = new SwingWorker<>() {
             @Override
-            public void mouseClicked(MouseEvent e) {
-                int selectedRow = bookingTable.getSelectedRow();
-                if (selectedRow >= 0) {
-                    int bookingId = (int) tableModel.getValueAt(selectedRow, 0);
-                    displayTicket(bookingId);
+            protected BookingGroup doInBackground() {
+                return bookingDAO.getBookingGroupById(groupId);
+            }
+
+            @Override
+            protected void done() {
+                try {
+                    currentBookingGroup = get();
+                    if (currentBookingGroup == null) {
+                        JOptionPane.showMessageDialog(TicketGeneration.this, "No booking found with Group ID #" + groupId, "Not Found", JOptionPane.INFORMATION_MESSAGE);
+                        ticketPreviewArea.setText("\n\n                  No booking record found for Group ID #" + groupId);
+                        printButton.setEnabled(false);
+                        exportButton.setEnabled(false);
+                        return;
+                    }
+
+                    renderTicket(currentBookingGroup);
+                    printButton.setEnabled(true);
+                    exportButton.setEnabled(true);
+                } catch (Exception ex) {
+                    ex.printStackTrace();
                 }
             }
-        });
-
-        loadBookings();
-
-        if (initialBookingId > 0) {
-            searchField.setText(String.valueOf(initialBookingId));
-            displayTicket(initialBookingId);
-        } else {
-            ticketArea.setText("\n  Please select a booking from the list or enter a Booking ID to view the ticket.");
-        }
+        };
+        worker.execute();
     }
 
-    private void loadBookings() {
-        tableModel.setRowCount(0);
-        List<Booking> list = bookingDAO.getAllBookings();
-        for (Booking b : list) {
-            tableModel.addRow(new Object[]{
-                    b.getBookingId(),
-                    b.getPassengerName() != null ? b.getPassengerName() : ("ID: " + b.getPassengerId()),
-                    b.getBusName() != null ? b.getBusName() : ("Bus: " + b.getBusId()),
-                    b.getSeatNumber(),
-                    b.getStatus()
-            });
-        }
-    }
-
-    private void searchTicket() {
-        String text = searchField.getText().trim();
-        if (text.isEmpty()) {
-            JOptionPane.showMessageDialog(this, "Please enter a Booking ID to search.", "Validation", JOptionPane.WARNING_MESSAGE);
-            return;
-        }
-
-        try {
-            int id = Integer.parseInt(text);
-            displayTicket(id);
-        } catch (NumberFormatException ex) {
-            JOptionPane.showMessageDialog(this, "Booking ID must be a valid number.", "Error", JOptionPane.ERROR_MESSAGE);
-        }
-    }
-
-    private void displayTicket(int bookingId) {
-        Booking b = bookingDAO.getBookingById(bookingId);
-        if (b == null) {
-            JOptionPane.showMessageDialog(this, "No ticket found for Booking ID #" + bookingId, "Not Found", JOptionPane.INFORMATION_MESSAGE);
-            ticketArea.setText("\n  Ticket not found for Booking ID #" + bookingId);
-            currentBooking = null;
-            return;
-        }
-
-        currentBooking = b;
-        searchField.setText(String.valueOf(b.getBookingId()));
-
+    private void renderTicket(BookingGroup bg) {
         StringBuilder sb = new StringBuilder();
-        sb.append("=====================================================\n");
-        sb.append("             BUS RESERVATION BOARDING PASS           \n");
-        sb.append("=====================================================\n");
-        sb.append(String.format(" Ticket / Booking ID : #%d\n", b.getBookingId()));
-        sb.append(String.format(" Status              : %s\n", b.getStatus()));
-        sb.append(String.format(" Date of Journey     : %s\n", b.getBookingDate()));
-        sb.append("-----------------------------------------------------\n");
-        sb.append(" PASSENGER INFORMATION:\n");
-        sb.append(String.format(" Name                : %s\n", b.getPassengerName() != null ? b.getPassengerName() : "N/A"));
-        sb.append(String.format(" Passenger ID        : %d\n", b.getPassengerId()));
-        sb.append(String.format(" Contact Phone       : %s\n", b.getPassengerPhone() != null ? b.getPassengerPhone() : "N/A"));
-        sb.append("-----------------------------------------------------\n");
-        sb.append(" TRIP & BUS DETAILS:\n");
-        sb.append(String.format(" Bus ID & Name       : #%d - %s\n", b.getBusId(), b.getBusName() != null ? b.getBusName() : "Standard Bus"));
-        sb.append(String.format(" Origin              : %s\n", b.getSource() != null ? b.getSource() : "N/A"));
-        sb.append(String.format(" Destination         : %s\n", b.getDestination() != null ? b.getDestination() : "N/A"));
-        sb.append(String.format(" Seat Number         : %d\n", b.getSeatNumber()));
-        sb.append("-----------------------------------------------------\n");
-        sb.append(" FARE SUMMARY:\n");
-        sb.append(String.format(" Fare Amount         : $%.2f\n", b.getFare()));
-        sb.append(String.format(" Payment Status      : %s\n", "PAID"));
-        sb.append("=====================================================\n");
-        sb.append("       Thank you for traveling with us! Have a safe trip!\n");
-        sb.append("=====================================================\n");
+        sb.append("================================================================================\n");
+        sb.append("                       BUS MANAGEMENT & EXPRESS LINES                          \n");
+        sb.append("                             OFFICIAL BOARDING PASS                             \n");
+        sb.append("================================================================================\n\n");
 
-        ticketArea.setText(sb.toString());
+        sb.append(String.format("  BOOKING GROUP ID : #%-15d  BOOKING DATE: %s\n",
+                bg.getGroupId(),
+                bg.getBookingTime() != null ? bg.getBookingTime().toString().substring(0, 19) : "N/A"));
+        sb.append("--------------------------------------------------------------------------------\n");
+        sb.append("  PASSENGER DETAILS:\n");
+        sb.append(String.format("    Name   : %-30s Gender : %s\n", bg.getPassengerName(), bg.getPassengerGender()));
+        sb.append(String.format("    Phone  : %-30s ID No  : #%d\n", bg.getPassengerPhone(), bg.getPassengerId()));
+
+        if (bg.isHasDisability()) {
+            sb.append(String.format("    Concession Status : SPECIAL DISABILITY CONCESSION APPLIED (100%%)\n"));
+            sb.append(String.format("    Certificate No    : %s\n", bg.getDisabilityIdNo() != null ? bg.getDisabilityIdNo() : "VERIFIED"));
+        } else {
+            sb.append("    Concession Status : Standard Fare (0% Concession)\n");
+        }
+
+        sb.append("--------------------------------------------------------------------------------\n");
+        sb.append("  TRAVEL & ROUTE ITINERARY:\n");
+        sb.append(String.format("    Bus Service    : %-30s Bus ID : #%d\n", bg.getBusName(), bg.getBusId()));
+        sb.append(String.format("    Origin City    : %-30s Status : %s\n", bg.getSource(), bg.getBusStatus()));
+        sb.append(String.format("    Destination    : %-30s\n", bg.getDestination()));
+        sb.append(String.format("    Departure Time : %-30s\n", bg.getBusDepartureTime() != null ? bg.getBusDepartureTime() : "SCHEDULED"));
+
+        sb.append("--------------------------------------------------------------------------------\n");
+        sb.append("  SEAT RESERVATION & FARE BREAKDOWN:\n");
+        sb.append(String.format("    Reserved Seats : %s  (Total: %d seat(s))\n",
+                bg.getSeatNumbersAsString(),
+                bg.getSeatNumbers() != null ? bg.getSeatNumbers().size() : 0));
+        sb.append(String.format("    Base Fare/Seat : $%.2f\n", bg.getBaseFare()));
+
+        if (bg.isHasDisability()) {
+            sb.append("    Concession     : Disability Concession (100% Free Travel)\n");
+            sb.append("    Total Fare Due : $0.00 (PAID / WAIVED)\n");
+        } else {
+            sb.append(String.format("    Total Fare Due : $%.2f (PAID)\n", bg.getTotalFare()));
+        }
+
+        sb.append("\n================================================================================\n");
+        sb.append("  SECURITY & BOARDING INSTRUCTIONS:\n");
+        sb.append("  - Please present this digital or printed boarding pass 15 minutes prior to departure.\n");
+        sb.append("  - Valid government photo ID is mandatory along with this ticket.\n");
+        sb.append("  - If travelling under disability concession, valid disability card is required.\n");
+        sb.append("  - Luggage allowance: 2 standard bags per passenger.\n");
+        sb.append("================================================================================\n");
+        sb.append("           [ BARCODE: *BUS-").append(bg.getGroupId()).append("-").append(bg.getBusId()).append("* ]            SAFE JOURNEY!\n");
+        sb.append("================================================================================\n");
+
+        ticketPreviewArea.setText(sb.toString());
+        ticketPreviewArea.setCaretPosition(0);
     }
 
     private void printTicket() {
-        if (currentBooking == null) {
-            JOptionPane.showMessageDialog(this, "Please select or search a valid ticket first.", "No Ticket", JOptionPane.WARNING_MESSAGE);
-            return;
-        }
+        PrinterJob job = PrinterJob.getPrinterJob();
+        job.setJobName("Bus_Boarding_Pass_Group_" + (currentBookingGroup != null ? currentBookingGroup.getGroupId() : "Receipt"));
 
-        try {
-            boolean complete = ticketArea.print();
-            if (complete) {
-                JOptionPane.showMessageDialog(this, "Ticket printing complete!");
+        job.setPrintable(new Printable() {
+            @Override
+            public int print(Graphics graphics, PageFormat pageFormat, int pageIndex) throws PrinterException {
+                if (pageIndex > 0) {
+                    return NO_SUCH_PAGE;
+                }
+                Graphics2D g2d = (Graphics2D) graphics;
+                g2d.translate(pageFormat.getImageableX(), pageFormat.getImageableY());
+
+                g2d.scale(0.82, 0.82);
+                ticketPreviewArea.printAll(g2d);
+                return PAGE_EXISTS;
             }
-        } catch (Exception ex) {
-            JOptionPane.showMessageDialog(this, "Printing failed: " + ex.getMessage(), "Print Error", JOptionPane.ERROR_MESSAGE);
+        });
+
+        boolean doPrint = job.printDialog();
+        if (doPrint) {
+            try {
+                job.print();
+                JOptionPane.showMessageDialog(this, "Boarding pass sent to printer / PDF exporter successfully!", "Printing Complete", JOptionPane.INFORMATION_MESSAGE);
+            } catch (PrinterException ex) {
+                JOptionPane.showMessageDialog(this, "Printing failed: " + ex.getMessage(), "Printer Error", JOptionPane.ERROR_MESSAGE);
+            }
         }
     }
 
-    private void saveTicketToFile() {
-        if (currentBooking == null) {
-            JOptionPane.showMessageDialog(this, "Please select or search a valid ticket first.", "No Ticket", JOptionPane.WARNING_MESSAGE);
-            return;
-        }
+    private void exportToTxt() {
+        if (currentBookingGroup == null) return;
 
         JFileChooser fileChooser = new JFileChooser();
-        fileChooser.setSelectedFile(new File("Ticket_" + currentBooking.getBookingId() + ".txt"));
-        int userSelection = fileChooser.showSaveDialog(this);
+        fileChooser.setSelectedFile(new File("Boarding_Pass_Group_" + currentBookingGroup.getGroupId() + ".txt"));
+        int userChoice = fileChooser.showSaveDialog(this);
 
-        if (userSelection == JFileChooser.APPROVE_OPTION) {
+        if (userChoice == JFileChooser.APPROVE_OPTION) {
             File fileToSave = fileChooser.getSelectedFile();
-            try (PrintWriter out = new PrintWriter(fileToSave)) {
-                out.print(ticketArea.getText());
-                JOptionPane.showMessageDialog(this, "Ticket saved successfully to:\n" + fileToSave.getAbsolutePath());
-            } catch (Exception ex) {
-                JOptionPane.showMessageDialog(this, "Error saving file: " + ex.getMessage(), "File Error", JOptionPane.ERROR_MESSAGE);
+            try (FileWriter writer = new FileWriter(fileToSave)) {
+                writer.write(ticketPreviewArea.getText());
+                JOptionPane.showMessageDialog(this, "Ticket receipt saved to:\n" + fileToSave.getAbsolutePath(), "Receipt Saved", JOptionPane.INFORMATION_MESSAGE);
+            } catch (IOException e) {
+                JOptionPane.showMessageDialog(this, "Failed to save file: " + e.getMessage(), "Save Error", JOptionPane.ERROR_MESSAGE);
             }
         }
     }

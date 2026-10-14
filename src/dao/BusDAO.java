@@ -3,28 +3,31 @@ package dao;
 import database.DBConnection;
 import model.Bus;
 
-import java.sql.Connection;
-import java.sql.PreparedStatement;
-import java.sql.ResultSet;
-import java.sql.SQLException;
+import java.sql.*;
+import java.time.LocalDateTime;
 import java.util.ArrayList;
 import java.util.List;
 
 public class BusDAO {
 
-    public boolean addBus(Bus b) {
-        String query = "INSERT INTO bus (bus_id, bus_name, source, destination, total_seats, fare) VALUES (?, ?, ?, ?, ?, ?)";
+    public boolean addBus(Bus bus) {
+        String sql = "INSERT INTO bus (bus_id, bus_name, source, destination, total_seats, fare, departure_time, bus_type, status) " +
+                     "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)";
+
         try (Connection con = DBConnection.getConnection();
-             PreparedStatement pst = con.prepareStatement(query)) {
+             PreparedStatement ps = con.prepareStatement(sql)) {
 
-            pst.setInt(1, b.getBusId());
-            pst.setString(2, b.getBusName());
-            pst.setString(3, b.getSource());
-            pst.setString(4, b.getDestination());
-            pst.setInt(5, b.getTotalSeats());
-            pst.setDouble(6, b.getFare());
+            ps.setInt(1, bus.getBusId());
+            ps.setString(2, bus.getBusName());
+            ps.setString(3, bus.getSource());
+            ps.setString(4, bus.getDestination());
+            ps.setInt(5, bus.getTotalSeats());
+            ps.setDouble(6, bus.getFare());
+            ps.setTimestamp(7, bus.getDepartureTime() != null ? Timestamp.valueOf(bus.getDepartureTime()) : Timestamp.valueOf(LocalDateTime.now().plusDays(1)));
+            ps.setString(8, bus.getBusType() != null ? bus.getBusType() : "SEATER 2+2");
+            ps.setString(9, bus.getStatus() != null ? bus.getStatus() : "SCHEDULED");
 
-            return pst.executeUpdate() > 0;
+            return ps.executeUpdate() > 0;
         } catch (SQLException e) {
             e.printStackTrace();
             return false;
@@ -32,22 +35,16 @@ public class BusDAO {
     }
 
     public List<Bus> getAllBuses() {
+        autoUpdateDepartedStatuses();
         List<Bus> list = new ArrayList<>();
-        String query = "SELECT * FROM bus ORDER BY bus_id ASC";
+        String sql = "SELECT * FROM bus ORDER BY departure_time ASC, bus_id ASC";
+
         try (Connection con = DBConnection.getConnection();
-             PreparedStatement pst = con.prepareStatement(query);
-             ResultSet rs = pst.executeQuery()) {
+             PreparedStatement ps = con.prepareStatement(sql);
+             ResultSet rs = ps.executeQuery()) {
 
             while (rs.next()) {
-                Bus b = new Bus(
-                        rs.getInt("bus_id"),
-                        rs.getString("bus_name"),
-                        rs.getString("source"),
-                        rs.getString("destination"),
-                        rs.getInt("total_seats"),
-                        rs.getDouble("fare")
-                );
-                list.add(b);
+                list.add(extractBus(rs));
             }
         } catch (SQLException e) {
             e.printStackTrace();
@@ -56,21 +53,14 @@ public class BusDAO {
     }
 
     public Bus getBusById(int id) {
-        String query = "SELECT * FROM bus WHERE bus_id = ?";
+        String sql = "SELECT * FROM bus WHERE bus_id = ?";
         try (Connection con = DBConnection.getConnection();
-             PreparedStatement pst = con.prepareStatement(query)) {
+             PreparedStatement ps = con.prepareStatement(sql)) {
 
-            pst.setInt(1, id);
-            try (ResultSet rs = pst.executeQuery()) {
+            ps.setInt(1, id);
+            try (ResultSet rs = ps.executeQuery()) {
                 if (rs.next()) {
-                    return new Bus(
-                            rs.getInt("bus_id"),
-                            rs.getString("bus_name"),
-                            rs.getString("source"),
-                            rs.getString("destination"),
-                            rs.getInt("total_seats"),
-                            rs.getDouble("fare")
-                    );
+                    return extractBus(rs);
                 }
             }
         } catch (SQLException e) {
@@ -79,19 +69,24 @@ public class BusDAO {
         return null;
     }
 
-    public boolean updateBus(Bus b) {
-        String query = "UPDATE bus SET bus_name = ?, source = ?, destination = ?, total_seats = ?, fare = ? WHERE bus_id = ?";
+    public boolean updateBus(Bus bus) {
+        String sql = "UPDATE bus SET bus_name = ?, source = ?, destination = ?, total_seats = ?, fare = ?, " +
+                     "departure_time = ?, bus_type = ?, status = ? WHERE bus_id = ?";
+
         try (Connection con = DBConnection.getConnection();
-             PreparedStatement pst = con.prepareStatement(query)) {
+             PreparedStatement ps = con.prepareStatement(sql)) {
 
-            pst.setString(1, b.getBusName());
-            pst.setString(2, b.getSource());
-            pst.setString(3, b.getDestination());
-            pst.setInt(4, b.getTotalSeats());
-            pst.setDouble(5, b.getFare());
-            pst.setInt(6, b.getBusId());
+            ps.setString(1, bus.getBusName());
+            ps.setString(2, bus.getSource());
+            ps.setString(3, bus.getDestination());
+            ps.setInt(4, bus.getTotalSeats());
+            ps.setDouble(5, bus.getFare());
+            ps.setTimestamp(6, bus.getDepartureTime() != null ? Timestamp.valueOf(bus.getDepartureTime()) : Timestamp.valueOf(LocalDateTime.now().plusDays(1)));
+            ps.setString(7, bus.getBusType());
+            ps.setString(8, bus.getStatus());
+            ps.setInt(9, bus.getBusId());
 
-            return pst.executeUpdate() > 0;
+            return ps.executeUpdate() > 0;
         } catch (SQLException e) {
             e.printStackTrace();
             return false;
@@ -99,15 +94,61 @@ public class BusDAO {
     }
 
     public boolean deleteBus(int id) {
-        String query = "DELETE FROM bus WHERE bus_id = ?";
+        String sql = "DELETE FROM bus WHERE bus_id = ?";
         try (Connection con = DBConnection.getConnection();
-             PreparedStatement pst = con.prepareStatement(query)) {
+             PreparedStatement ps = con.prepareStatement(sql)) {
 
-            pst.setInt(1, id);
-            return pst.executeUpdate() > 0;
+            ps.setInt(1, id);
+            return ps.executeUpdate() > 0;
         } catch (SQLException e) {
             e.printStackTrace();
             return false;
         }
+    }
+
+    /**
+     * Auto-updates buses whose departure time has passed to status 'DEPARTED'.
+     */
+    public void autoUpdateDepartedStatuses() {
+        String sql = "UPDATE bus SET status = 'DEPARTED' WHERE departure_time <= NOW() AND status = 'SCHEDULED'";
+        try (Connection con = DBConnection.getConnection();
+             PreparedStatement ps = con.prepareStatement(sql)) {
+            ps.executeUpdate();
+        } catch (SQLException e) {
+            // Ignore background error
+        }
+    }
+
+    public int getNextBusId() {
+        String sql = "SELECT COALESCE(MAX(bus_id), 0) + 1 FROM bus";
+        try (Connection con = DBConnection.getConnection();
+             PreparedStatement ps = con.prepareStatement(sql);
+             ResultSet rs = ps.executeQuery()) {
+            if (rs.next()) {
+                return rs.getInt(1);
+            }
+        } catch (SQLException e) {
+            e.printStackTrace();
+        }
+        return 1;
+    }
+
+    private Bus extractBus(ResultSet rs) throws SQLException {
+        Bus b = new Bus();
+        b.setBusId(rs.getInt("bus_id"));
+        b.setBusName(rs.getString("bus_name"));
+        b.setSource(rs.getString("source"));
+        b.setDestination(rs.getString("destination"));
+        b.setTotalSeats(rs.getInt("total_seats"));
+        b.setFare(rs.getDouble("fare"));
+
+        Timestamp dep = rs.getTimestamp("departure_time");
+        if (dep != null) {
+            b.setDepartureTime(dep.toLocalDateTime());
+        }
+
+        b.setBusType(rs.getString("bus_type"));
+        b.setStatus(rs.getString("status"));
+        return b;
     }
 }
